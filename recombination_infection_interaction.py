@@ -396,6 +396,23 @@ hp = population_dataframe_generator(40)
 final_s_frequency = []
 genotype_dictionary = two_locus_dictionary_function()
 
+def next_event(ta_herm, ta_male): 
+    min_tau_herm = np.min(ta_herm) if len(ta_herm) > 0 else math.inf
+    min_tau_male = np.min(ta_male) if len(ta_male) > 0 else math.inf
+
+    if min_tau_herm <= min_tau_male: 
+        tau = min_tau_herm
+        idx_event = np.argmin(ta_herm)
+        sex = 'Herm'
+        reaction_type = REACTION_MAP['herm'].get(idx_event % 3, "Unkown")
+        individual_index = idx_event // 3
+    else: 
+        tau = min_tau_male
+        idx_event = np.argmin(ta_male)
+        sex = 'Male'
+        reaction_type = REACTION_MAP['male'].get(idx_event % 2, "Unkown")
+        individual_index = idx_event // 2
+    return tau, sex, reaction_type, individual_index
 
 
 
