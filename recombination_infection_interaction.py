@@ -2,33 +2,27 @@ import numpy as np
 import pandas as pd 
 import random
 import math 
+from itertools import product
+from itertools import combinations_with_replacement
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 
 def  two_locus_dictionary_function(allele_number = 3):
 
-    counter = 0
-    genotypes = []
-    values = []
-    for i in range(allele_number):
-        for j in range(allele_number):
-            for z in range(allele_number):
-                for y in range(allele_number):
-                    if i == z and j == y:
-                        genotypes.append(f"A{i+1} B{j+1} / A{z+1} B{y+1}")
-                        values.append(counter)
-                        counter += 1
-                    else:
-                        if genotypes.count(f"A{i+1} B{j+1} / A{z+1} B{y+1}") == 0:
-                            genotypes.append(f"A{i+1} B{j+1} / A{z+1} B{y+1}")
-                            genotypes.append(f"A{z+1} B{y+1} / A{i+1} B{j+1}")
-                            values.append(counter)
-                            values.append(counter)
-                            counter += 1
+    haplotype = [
+        f'A{i+1} B{j+1}'
+        for i, j in product(range(allele_number), repeat=2)
+    ]
 
-    genotype_dictionary = {f'{genotypes[i]}': values[i] for i in range(len(genotypes))}
-    return genotype_dictionary
+    counter = 0
+    genotype_dic = {}
+    
+    for h1, h2 in combinations_with_replacement(haplotype, 2): 
+        genotype_dic[f'{h1} / {h2}'] = counter
+        genotype_dic[f'{h2} / {h1}'] = counter
+        counter += 1 
+    return genotype_dic 
 
 
 def  two_locus_index_dictionary_function(allele_number = 3):
@@ -81,29 +75,20 @@ def index_to_genotype (x, index_dictionary):
 
 def parasite_genotype_frequencies(herm_population, male_population, iteration = None):
 
-    infected_male_individuals = np.array(
-        [1 if male_population.at[m , "Parasite status"] == 'infected' else 0\
-         for m in male_population['Index']]
-        )
-    infected_herm_individuals = np.array(
-        [1 if herm_population.at[m , "Parasite status"] == 'infected' else 0 \
-         for m in herm_population['Index']]
-    )
-    infected_male_individuals = infected_male_individuals.nonzero()[0]
-    infected_herm_individuals = infected_herm_individuals.nonzero()[0]
 
-    infected_individuals = len(infected_herm_individuals) + len(infected_male_individuals)
+    population = pd.concat((herm_population, male_population), ignore_index=True)
+    infected = population[population['Parasite status'] == 'infected']
 
-    alpha = [0] * 45
-    genotype_dictionary = two_locus_dictionary_function()
+    if len(infected) == 0: 
+        genotype_dic = two_locus_dictionary_function()
+        return [0.0] * len(set(genotype_dic.values()))
+    
+    genotype_dic = two_locus_dictionary_function()
+    alpha = [0.0] * len(set(genotype_dic.values()))
 
-    for g in infected_herm_individuals:
-        u = genotype_converter(herm_population.at[g, 'Genotype'], genotype_dictionary)
-        alpha[u] = alpha[u] + (1/infected_individuals)
-
-    for g in infected_male_individuals:
-        u = genotype_converter(male_population.at[g, 'Genotype'], genotype_dictionary)
-        alpha[u] = alpha[u] + (1/infected_individuals)
+    for genotype in infected['Genotype']: 
+        u = genotype_converter(genotype, genotype_dic)
+        alpha[u] += 1/len(infected)
 
     return alpha
 
@@ -123,7 +108,7 @@ def infection_function (population, individual_index):
 
     population.at[individual_index , 'Parasite status'] = 'uninfected' \
         if population.at[individual_index, 'Parasite status'] == 'infected'\
-            else 'uninfected'
+            else 'infected'
     return population
 
 def death_function (population, individual_index):
@@ -328,7 +313,7 @@ def mating_type_frequency(s_frequency, c_frequency, herm_population, male_popula
     return s_frequency, c_frequency  
 
 
-def genotype_genrator (): 
+def genotype_generator (): 
     '''
     Parameters
     ----------
@@ -338,68 +323,48 @@ def genotype_genrator ():
     -------
     Generates a random genotype between all possible genotypes in case of 2 loci with 3 alleles 
     '''
-    
-    index = random.randint(0, 44)
-    genotype = index_to_genotype(index, two_locus_index_dictionary_function())
+    genotype_dic = two_locus_index_dictionary_function()
+    index = random.randint(0, len(genotype_dic))
+    genotype = index_to_genotype(index, genotype_dic)
 
     return genotype
 
 def population_dataframe_generator(IP): 
-    index = list()
-    genotype = list()
-    mating_type = list()
-    parasite_status = list()
-
-    for t in range (0, IP):
-        index.append(t)
-        mating_type.append("C / C")
-        parasite_status.append("infected" if random.randint(0, 1) == 1 else "uninfected")
-        genotype.append(genotype_genrator())
-
-
-    col = ["Index", "Genotype", "Mating type", "Parasite status"] 
-
-
-    population_dataframe = pd.DataFrame({col[0]:index , col[1]: genotype, col[2]: mating_type, col[3]: parasite_status})
-    return population_dataframe
+    return pd.DataFrame({
+        "Genotype": [genotype_generator() for _ in range(IP)],
+        "Mating Type": ["C / C"] * IP, 
+        "Parasite status": np.random.choice(
+            ["infected", "uninfected"],
+            size = IP
+            )
+    })
 
 def tau_generator(a): 
     '''
     create a random time till the next event based on the reaction rate a 
     '''
-    return 10000000 if a == 0 else (1/(a) * math.log(1/random.random())) 
-
-def genotype_converter (genotype, genotype_dictionary):
-    '''
-    Parametes 
-    ---------
-    Genotype: a string containing the individual's genotype
-
-    
-    Return
-    ------
-    Returns the index of each genotype of two loci with 3 alleles. (Ranging from 0 to 44)  
-    '''
-
-    return genotype_dictionary.get(genotype, 1000)
-
-def reaction_type_converter_herm (i):
-    if (i == 0):
-        return "Death" 
-    elif (i == 1):
-        return "Birth"
-    elif (i == 2):
-        return "Infection / Recovery"
+    if a <= 0:
+        return math.inf
+    return np.random.exponential(1/a)
 
 
-def reaction_type_converter_male (i):
-    if (i == 0):
-        return "Death" 
-    elif (i == 1):
-        return "Infection / Recovery"
+def reaction_type_converter(sex, i):
+    return REACTION_MAP[sex].get(i, "Unkown") 
+
 
 
 #Population Growth Parameters
+REACTION_MAP = {
+    "herm" : {
+            0: "Death",
+            1: "Birth",
+            2: "Infection / Recovery"
+        },
+    "male" : {
+        0: "Death",
+        1: "Infection / Recovery"
+    }
+}
 
 au = 0.006      #density dependance of uninfected individuals
 ai = 1 * au   #density dependance of infected individuals
@@ -430,6 +395,9 @@ mp = population_dataframe_generator(40)
 hp = population_dataframe_generator(40)
 final_s_frequency = []
 genotype_dictionary = two_locus_dictionary_function()
+
+
+
 
 for n in tqdm(range(0, 30)):
     herm_population = hp.copy(deep=True)
@@ -478,7 +446,7 @@ for n in tqdm(range(0, 30)):
         
         if sex_reaction == 'Herm':
             tau = min(ta_herm)
-            reaction_type = reaction_type_converter_herm(ta_herm.index(min(ta_herm)) % 3)
+            reaction_type = reaction_type_converter('herm', ta_herm.index(min(ta_herm)) % 3)
             individual_index = ta_herm.index(min(ta_herm)) // 3
             if (reaction_type == 'Birth'):
                 reactions.append(f'{sex_reaction} , {reaction_type}')
@@ -492,7 +460,7 @@ for n in tqdm(range(0, 30)):
                 herm_population = infection_function(herm_population, individual_index)
         elif sex_reaction == 'Male':
             tau = min(ta_male)
-            reaction_type = reaction_type_converter_male(ta_male.index(min(ta_male)) % 2)
+            reaction_type = reaction_type_converter('male', ta_male.index(min(ta_male)) % 2)
             individual_index = ta_male.index(min(ta_male)) // 2
             if (reaction_type == 'Death'):
                 reactions.append(f'{sex_reaction} , {reaction_type}')
