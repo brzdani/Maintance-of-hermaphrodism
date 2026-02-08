@@ -7,7 +7,9 @@ from itertools import combinations_with_replacement
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-
+#------------------------------------
+#   generating the genotype dictinary
+#------------------------------------
 def  two_locus_dictionary_function(allele_number = 3):
 
     haplotype = [
@@ -24,15 +26,34 @@ def  two_locus_dictionary_function(allele_number = 3):
         counter += 1 
     return genotype_dic 
 
-
-
 def genotype_converter (genotype, genotype_dictionary):
     return genotype_dictionary.get(genotype, 1000)
 
-def index_to_genotype (x, index_dictionary):
-    return index_dictionary.get(x, 10000)
+#----------------------------
+#   generating the population
+#----------------------------
+def genotype_generator (): 
 
-def parasite_genotype_frequencies(herm_population, male_population, iteration = None):
+    genotype_dic = two_locus_dictionary_function()
+    index = np.random.randint(0, len(genotype_dic))
+    genotype = [*genotype_dic.keys()][index]
+
+    return genotype
+
+def population_dataframe_generator(IP): 
+    return pd.DataFrame({
+        "Mating type": ["C / C"] * IP,
+        "Genotype": [genotype_generator() for _ in range(IP)],
+        "Parasite status": np.random.choice(
+            ["infected", "uninfected"],
+            size = IP
+            )
+    })
+
+#--------------------------
+#   calculating frequencies
+#--------------------------
+def parasite_genotype_frequencies(herm_population, male_population):
 
 
     population = pd.concat((herm_population, male_population), ignore_index=True)
@@ -51,17 +72,48 @@ def parasite_genotype_frequencies(herm_population, male_population, iteration = 
 
     return alpha
 
+def mating_type_frequency(s_frequency, c_frequency, herm_population, male_population):
+
+    allele_map = {
+        'C / C' : (1.0, 0.0), 
+        'C / S' : (0.5, 0.5),
+        'S / C' : (0.5, 0.5),
+        'S / S' : (0.0, 1.0)
+    }
+
+    population = pd.concat([male_population, herm_population], ignore_index=True)
+
+    N = len(population)
+    c_count = 0
+    s_count = 0 
+    
+    for mt in population['Mating type']: 
+        c, s = allele_map[mt]
+        c_count += c
+        s_count += s
+
+    s_frequency.append(s_count / N)
+    c_frequency.append(c_count / N)
+
+    return s_frequency, c_frequency  
+
+#---------------------------------
+#   death  and infection function. 
+#---------------------------------
+def death_function (population, individual_index):
+    population = population.drop(individual_index).reset_index(drop = True)
+    population['Index'] = population.index
+    return population
+
 def infection_function (population, individual_index):
     population.at[individual_index , 'Parasite status'] = 'uninfected' \
         if population.at[individual_index, 'Parasite status'] == 'infected'\
             else 'infected'
     return population
 
-def death_function (population, individual_index):
-    population = population.drop(individual_index).reset_index(drop = True)
-    population['Index'] = population.index
-    return population
-
+#----------------------------------------
+#   functions required for birth function
+#----------------------------------------
 def mating_male_index (male_population, infection_effect_on_male): 
     weights = []
     for status in male_population['Parasite status']:
@@ -74,8 +126,6 @@ def mating_male_index (male_population, infection_effect_on_male):
 
     return np.random.choice(len(male_population), p=weights)
 
-
-
 def recombination (gen, r):
     if isinstance(gen, str):
         gen = gen.split()
@@ -85,20 +135,29 @@ def recombination (gen, r):
 
     return gen
 
-def newborn_gender_generator (r):
-    return 'herm' if np.random.rand() < r else 'male'
-
 def newborn_genotype_generator(herm_gen, male_gen, r):
     herm_gen = recombination(herm_gen, r)
     male_gen = recombination(male_gen, r)
 
-    sperm = np.random.randint(2)
-    ovule = np.random.randint(2)
+    match np.random.randint(2):
+        case 0:
+            idx_sperm = (0, 1)
+        case 1:
+            idx_sperm = (3, 4)
+    
+    match np.random.randint(2): 
+        case 0: 
+            idx_ovule = (0, 1)
+        case 1: 
+            idx_ovule = (3, 4)
 
-    sperm_genotype = " ".join(male_gen[2 * sperm : 2 * sperm + 2])
-    ovule_genotype = " ".join(herm_gen[2 * ovule : 2 * ovule + 2])
+    sperm_genotype = " ".join(male_gen[idx_sperm[0] : idx_sperm[1]+1])
+    ovule_genotype = " ".join(herm_gen[idx_ovule[0] : idx_ovule[1]+1])
 
     return f'{sperm_genotype} / {ovule_genotype}'
+
+def newborn_gender_generator (r):
+    return 'herm' if np.random.rand() < r else 'male'
 
 def mating_type_generator (herm_population,
                            individual_index,
@@ -111,9 +170,11 @@ def mating_type_generator (herm_population,
     mt_sperm = male_population.at[index_of_mating_male, 'Mating type'].split()
     mt_sperm = mt_sperm[2*np.random.randint(2)]
 
-    return f'mt_sperm / mt_ovule'
+    return f'{mt_sperm} / {mt_ovule}'
 
-
+#-----------------
+#   birth function 
+#-----------------
 def birth_function (herm_population, male_population, individual_index, r,
                     infection_effect_on_male = 0, ro = 0.5, rs = 0.9, o_r = 0.5):
 
@@ -171,59 +232,15 @@ def birth_function (herm_population, male_population, individual_index, r,
         ]
 
     return herm_population, male_population
-    
-def genotype_converter (genotype, genotype_dictionary):
-    return genotype_dictionary.get(genotype, 1000)
-
-def mating_type_frequency(s_frequency, c_frequency, herm_population, male_population):
-
-    allele_map = {
-        'C / C' : (1.0, 0.0), 
-        'C / S' : (0.5, 0.5),
-        'S / C' : (0.5, 0.5),
-        'S / S' : (0.0, 1.0)
-    }
-
-    population = pd.concat([male_population, herm_population], ignore_index=True)
-
-    N = len(population)
-    c_count = 0
-    s_count = 0 
-    
-    for mt in population['Mating type']: 
-        c, s = allele_map[mt]
-        c_count += c
-        s_count += s
-
-    s_frequency.append(s_count / N)
-    c_frequency.append(c_count / N)
-
-    return s_frequency, c_frequency  
 
 
-def genotype_generator (): 
-
-    genotype_dic = two_locus_dictionary_function()
-    index = random.randint(0, len(genotype_dic))
-    genotype = [*genotype_dic.keys()][index]
-
-    return genotype
-
-def population_dataframe_generator(IP): 
-    return pd.DataFrame({
-        "Mating type": ["C / C"] * IP,
-        "Genotype": [genotype_generator() for _ in range(IP)],
-        "Parasite status": np.random.choice(
-            ["infected", "uninfected"],
-            size = IP
-            )
-    })
-
+#-----------------------------------
+#   Gillespie Algorithm requiremnets
+#-----------------------------------
 def tau_generator(a): 
     if a <= 0:
         return math.inf
     return np.random.exponential(1/a)
-
 
 def next_event(ta_herm, ta_male): 
     min_tau_herm = np.min(ta_herm) if len(ta_herm) > 0 else math.inf
@@ -243,35 +260,35 @@ def next_event(ta_herm, ta_male):
         individual_index = idx_event // 2
     return tau, sex, reaction_type, individual_index
 
-
-def simulate_population(**kwargs): 
+#-----------------------------------------------------
+#   running population simulation for t_max time unit
+#-----------------------------------------------------
+def simulate_population(**kwargs):
 
     herm_population = kwargs['hp'].copy(deep=True)
     male_population = kwargs['mp'].copy(deep=True)
 
-    
-
-    t = 0 
-    iteration = 0 
+    t = 0
+    iteration = 0
     time_series = [t]
     herm_sizes = [len(herm_population)]
     male_sizes = [len(male_population)]
     reactions = []
-    
+
     s_frequency = []
     c_frequency = []
     s_frequency , c_frequency = mating_type_frequency(s_frequency,
-                                                       c_frequency, 
-                                                       herm_population, 
+                                                       c_frequency,
+                                                       herm_population,
                                                        male_population
                                                        )
 
-    if kwargs['scheduled_events'] is None: 
+    if kwargs['scheduled_events'] is None:
         kwargs['scheduled_events'] = {}
-    
+
     alpha = kwargs['alpha']
     with tqdm() as pbar:
-        while t < kwargs['t_max']: 
+        while t < kwargs['t_max']:
             herm_population['Genotype Index'] = herm_population['Genotype'].apply(
             lambda g: genotype_converter(g, kwargs['genotype_dictionary'])
             )
