@@ -67,7 +67,6 @@ def parasite_genotype_frequencies(herm_population, male_population):
     alpha = [0.0] * len(set(genotype_dic.values()))
     for genotype in infected['Genotype']: 
         u = genotype_converter(genotype, genotype_dic)
-        print(u)
         alpha[u] += 1/len(infected)
 
     return alpha
@@ -102,7 +101,6 @@ def mating_type_frequency(s_frequency, c_frequency, herm_population, male_popula
 #---------------------------------
 def death_function (population, individual_index):
     population = population.drop(individual_index).reset_index(drop = True)
-    population['Index'] = population.index
     return population
 
 def infection_function (population, individual_index):
@@ -173,7 +171,7 @@ def mating_type_generator (herm_population,
     return f'{mt_sperm} / {mt_ovule}'
 
 #-----------------
-#   birth function 
+#   birth function
 #-----------------
 def birth_function (herm_population, male_population, individual_index, r,
                     infection_effect_on_male = 0, ro = 0.5, rs = 0.9, o_r = 0.5):
@@ -206,7 +204,7 @@ def birth_function (herm_population, male_population, individual_index, r,
                                 )
     else:
         male_index = individual_index
-        male_gen = herm_population.at[individual_index, 'Genotype']
+        male_gen = herm_gen
         mt = mating_type_generator(
             herm_population,
             individual_index,
@@ -329,12 +327,11 @@ def simulate_population(**kwargs):
                     ])
 
             tau, sex, reaction_type, individual_index = next_event(ta_herm, ta_male)
-            herm_population.drop(columns = ['Genotype Index'], inplace = True)
-            male_population.drop(columns = ['Genotype Index'], inplace = True)
-            print(male_population)
+            herm_population = herm_population.drop(columns = ['Genotype Index'])
+            male_population = male_population.drop(columns = ['Genotype Index'])
             if sex == 'Herm': 
                 match reaction_type: 
-                    case 'Birth': 
+                    case 'Birth':
                         herm_population, male_population = birth_function(herm_population,
                                                                         male_population,
                                                                         individual_index,
@@ -367,8 +364,7 @@ def simulate_population(**kwargs):
 
             alpha = parasite_genotype_frequencies(
                 herm_population,
-                male_population,
-                iteration
+                male_population
             )
 
             s_frequency , c_frequency = mating_type_frequency(
@@ -385,7 +381,8 @@ def simulate_population(**kwargs):
             herm_sizes,
             male_sizes,
             s_frequency,
-            c_frequency)
+            c_frequency,
+            reactions)
     
 
 #Population Growth Parameters
