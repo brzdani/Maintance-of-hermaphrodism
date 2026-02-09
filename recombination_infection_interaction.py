@@ -45,7 +45,7 @@ def population_dataframe_generator(IP):
         "Mating type": ["C / C"] * IP,
         "Genotype": [genotype_generator() for _ in range(IP)],
         "Parasite status": np.random.choice(
-            ["infected", "uninfected"],
+            [True, False],
             size = IP
             )
     })
@@ -53,17 +53,15 @@ def population_dataframe_generator(IP):
 #--------------------------
 #   calculating frequencies
 #--------------------------
-def parasite_genotype_frequencies(herm_population, male_population):
+def parasite_genotype_frequencies(herm_population, male_population, genotype_dic):
 
 
     population = pd.concat((herm_population, male_population), ignore_index=True)
-    infected = population[population['Parasite status'] == 'infected']
+    infected = population[population['Parasite status'] == True]
 
     if len(infected) == 0: 
-        genotype_dic = two_locus_dictionary_function()
         return [0.0] * len(set(genotype_dic.values()))
     
-    genotype_dic = two_locus_dictionary_function()
     alpha = [0.0] * len(set(genotype_dic.values()))
     for genotype in infected['Genotype']: 
         u = genotype_converter(genotype, genotype_dic)
@@ -90,9 +88,16 @@ def mating_type_frequency(s_frequency, c_frequency, herm_population, male_popula
         c, s = allele_map[mt]
         c_count += c
         s_count += s
-
-    s_frequency.append(s_count / N)
-    c_frequency.append(c_count / N)
+    try: 
+        s_frequency.append(s_count / N)
+        c_frequency.append(c_count / N)
+    except ZeroDivisionError: 
+        if c_count == 0:
+            s_frequency, c_frequency = (1, 0)
+        else: 
+            s_frequency, c_frequency = (0, 1)
+    except exception as e: 
+        return None
 
     return s_frequency, c_frequency  
 
@@ -104,9 +109,8 @@ def death_function (population, individual_index):
     return population
 
 def infection_function (population, individual_index):
-    population.at[individual_index , 'Parasite status'] = 'uninfected' \
-        if population.at[individual_index, 'Parasite status'] == 'infected'\
-            else 'infected'
+    population.at[individual_index , 'Parasite status'] = False \
+        if population.at[individual_index, 'Parasite status'] else True
     return population
 
 #----------------------------------------
@@ -115,7 +119,7 @@ def infection_function (population, individual_index):
 def mating_male_index (male_population, infection_effect_on_male): 
     weights = []
     for status in male_population['Parasite status']:
-        if status == 'infected': 
+        if status: 
             weights.append(1-infection_effect_on_male)
         else:
             weights.append(1.0)
@@ -177,7 +181,7 @@ def birth_function (herm_population, male_population, individual_index, r,
                     infection_effect_on_male = 0, ro = 0.5, rs = 0.9, o_r = 0.5):
 
     male_index = 0
-    newborn_parasite_status = 'uninfected'
+    newborn_parasite_status = False
     herm_gen = herm_population.at[individual_index, 'Genotype']
     herm_mt = herm_population.at[individual_index , 'Mating type']
 
@@ -285,95 +289,95 @@ def simulate_population(**kwargs):
         kwargs['scheduled_events'] = {}
 
     alpha = kwargs['alpha']
-    with tqdm() as pbar:
-        while t < kwargs['t_max']:
-            herm_population['Genotype Index'] = herm_population['Genotype'].apply(
-            lambda g: genotype_converter(g, kwargs['genotype_dictionary'])
-            )
-            male_population['Genotype Index'] = male_population['Genotype'].apply(
-            lambda g: genotype_converter(g, kwargs['genotype_dictionary'])
-            )
-            if iteration in kwargs['scheduled_events']:
-                herm_population.at[0, 'Mating type'] = 'S / S'
-            total_pop = len(herm_population) + len (male_population)
 
-            ta_herm = []
-            for __,row in herm_population.iterrows():
-                g_index = row['Genotype Index']
-                if row['Parasite status'] == 'infected': 
-                    ta_herm.extend([
-                        tau_generator(kwargs['d']),
-                        tau_generator(kwargs['b0i'] - (kwargs['ai'] * total_pop)),
-                        tau_generator(kwargs['beta'])
-                    ])
-                else: 
-                    ta_herm.extend([
-                        tau_generator(kwargs['d']),
-                        tau_generator(kwargs['b0u'] - (kwargs['au'] * total_pop)),
-                        tau_generator(alpha[g_index])
-                    ])
-            ta_male = []
-            for __,row in male_population.iterrows():
-                g_index = row['Genotype Index']
-                if row['Parasite status'] == 'infected': 
-                    ta_male.extend([
-                        tau_generator(kwargs['d']),
-                        tau_generator(kwargs['beta'])
-                    ])
-                else: 
-                    ta_male.extend([
-                        tau_generator(kwargs['d']),
-                        tau_generator(alpha[g_index])
-                    ])
+    while t < kwargs['t_max']:
+        herm_population['Genotype Index'] = herm_population['Genotype'].apply(
+        lambda g: genotype_converter(g, kwargs['genotype_dictionary'])
+        )
+        male_population['Genotype Index'] = male_population['Genotype'].apply(
+        lambda g: genotype_converter(g, kwargs['genotype_dictionary'])
+        )
+        if iteration in kwargs['scheduled_events']:
+            herm_population.at[0, 'Mating type'] = 'S / S'
+        total_pop = len(herm_population) + len (male_population)
 
-            tau, sex, reaction_type, individual_index = next_event(ta_herm, ta_male)
-            herm_population = herm_population.drop(columns = ['Genotype Index'])
-            male_population = male_population.drop(columns = ['Genotype Index'])
-            if sex == 'Herm': 
-                match reaction_type: 
-                    case 'Birth':
-                        herm_population, male_population = birth_function(herm_population,
-                                                                        male_population,
-                                                                        individual_index,
-                                                                        kwargs['r'],
-                                                                        kwargs['infection_effect_on_male'],
-                                                                        kwargs['ro'],
-                                                                        kwargs['rs'],
-                                                                        kwargs['o_r'])
+        ta_herm = []
+        for __,row in herm_population.iterrows():
+            g_index = row['Genotype Index']
+            if row['Parasite status']: 
+                ta_herm.extend([
+                    tau_generator(kwargs['d']),
+                    tau_generator(kwargs['b0i'] - (kwargs['ai'] * total_pop)),
+                    tau_generator(kwargs['beta'])
+                ])
+            else: 
+                ta_herm.extend([
+                    tau_generator(kwargs['d']),
+                    tau_generator(kwargs['b0u'] - (kwargs['au'] * total_pop)),
+                    tau_generator(alpha[g_index])
+                ])
+        ta_male = []
+        for __,row in male_population.iterrows():
+            g_index = row['Genotype Index']
+            if row['Parasite status']: 
+                ta_male.extend([
+                    tau_generator(kwargs['d']),
+                    tau_generator(kwargs['beta'])
+                ])
+            else: 
+                ta_male.extend([
+                    tau_generator(kwargs['d']),
+                    tau_generator(alpha[g_index])
+                ])
 
-                    case 'Death': 
-                        herm_population = death_function(herm_population, individual_index)
-                    case 'Infection / Recovery': 
-                        herm_population = infection_function(herm_population, individual_index)
-            elif sex == 'Male': 
-                match reaction_type: 
-                    case 'Death': 
-                        male_population = death_function(male_population, individual_index)
+        tau, sex, reaction_type, individual_index = next_event(ta_herm, ta_male)
+        herm_population = herm_population.drop(columns = ['Genotype Index'])
+        male_population = male_population.drop(columns = ['Genotype Index'])
+        if sex == 'Herm': 
+            match reaction_type: 
+                case 'Birth':
+                    herm_population, male_population = birth_function(herm_population,
+                                                                    male_population,
+                                                                    individual_index,
+                                                                    kwargs['r'],
+                                                                    kwargs['infection_effect_on_male'],
+                                                                    kwargs['ro'],
+                                                                    kwargs['rs'],
+                                                                    kwargs['o_r'])
 
-                    case 'Infection / Recovery': 
-                        male_population = infection_function(male_population, individual_index)
-            reactions.append(f'{sex}, {reaction_type}')
+                case 'Death': 
+                    herm_population = death_function(herm_population, individual_index)
+                case 'Infection / Recovery': 
+                    herm_population = infection_function(herm_population, individual_index)
+        elif sex == 'Male': 
+            match reaction_type: 
+                case 'Death': 
+                    male_population = death_function(male_population, individual_index)
+
+                case 'Infection / Recovery': 
+                    male_population = infection_function(male_population, individual_index)
+        reactions.append(f'{sex}, {reaction_type}')
 
 
-            t += tau
-            iteration += 1
-            
-            time_series.append(t)
-            herm_sizes.append(len(herm_population))
-            male_sizes.append(len(male_population))
+        t += tau
+        iteration += 1
+        
+        time_series.append(t)
+        herm_sizes.append(len(herm_population))
+        male_sizes.append(len(male_population))
 
-            alpha = parasite_genotype_frequencies(
-                herm_population,
-                male_population
-            )
+        alpha = parasite_genotype_frequencies(
+            herm_population,
+            male_population,
+            kwargs['genotype_dictionary']
+        )
 
-            s_frequency , c_frequency = mating_type_frequency(
-                s_frequency, 
-                c_frequency, 
-                herm_population, 
-                male_population
-            )
-            pbar.update(1)
+        s_frequency , c_frequency = mating_type_frequency(
+            s_frequency, 
+            c_frequency, 
+            herm_population, 
+            male_population
+        )
             
     return (herm_population,
             male_population,
@@ -428,30 +432,26 @@ hp = population_dataframe_generator(40)
 final_s_frequency = []
 genotype_dictionary = two_locus_dictionary_function()
 
-for n in tqdm(range(0, 30)):
-    final_s_frequency = []
-    scheduled_events = [500]
-    
-    herm_pop, male_pop, times, herm_sizes, male_size, s_freq, c_frreq, reactions = \
-        simulate_population(
-            hp = hp, 
-            mp = mp,
-            genotype_dictionary = genotype_dictionary,
-            t_max = 60, 
-            scheduled_events = scheduled_events, 
-            b0i = b0i,
-            b0u = b0u, 
-            ai = ai, 
-            au = au,
-            o_r = o_r, 
-            rs = rs,
-            ro = ro, 
-            r = r, 
-            beta = beta, 
-            infection_effect_on_male = infection_effect_on_male, 
-            d = d,
-            alpha = alpha
+final_s_frequency = []
+scheduled_events = [500]
 
+herm_pop, male_pop, times, herm_sizes, male_size, s_freq, c_freq, reactions = \
+    simulate_population(
+        hp = hp, 
+        mp = mp,
+        genotype_dictionary = genotype_dictionary,
+        t_max = 60, 
+        scheduled_events = scheduled_events, 
+        b0i = b0i,
+        b0u = b0u, 
+        ai = ai, 
+        au = au,
+        o_r = o_r, 
+        rs = rs,
+        ro = ro, 
+        r = r, 
+        beta = beta, 
+        infection_effect_on_male = infection_effect_on_male, 
+        d = d,
+        alpha = alpha
         )
-    
-    final_s_frequency.append(s_freq[-1])
